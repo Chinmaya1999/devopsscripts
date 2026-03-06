@@ -55,13 +55,12 @@ kops create cluster \
 --cloud=aws \
 --zones=ap-south-1a,ap-south-1b \
 --control-plane-count=1 \
---control-plane-size=t3.micro \
+--control-plane-size=t3.small \
 --node-count=2 \
---node-size=t3.micro \
+--node-size=t3.small \
 --node-volume-size=20 \
 --control-plane-volume-size=20 \
 --ssh-public-key=my-keypair.pub \
---image=ami-0d44b036bd2b73294 \
 --networking=calico
 
 echo "Deploying cluster..."

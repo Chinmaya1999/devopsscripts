@@ -71,4 +71,20 @@ echo "Cluster deployment started..."
 echo "Wait 5-10 minutes then run:"
 
 echo "kops validate cluster --wait 10m"
+
 wq!
+
+
+
+export KOPS_STATE_STORE=s3://chinmaya-kops-testbkt9937.k8s.local
+kops validate cluster --wait 10m
+
+-- kops get cluster
+
+-- kubectl get nodes/no
+
+-- kubectl get nodes -o wide
+
+
+
+kops delete cluster --name reyaz.k8s.local --yes

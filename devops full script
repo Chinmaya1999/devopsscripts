@@ -1,0 +1,698 @@
+I have mern stack backend and fronted application 
+PORT=5001
+MONGODB_URI=mongodb+srv://chinmayakumarmallick25_db_user:vphFFVCHD1mdX5z5@cluster0.pjtae8z.mongodb.net/issue-tracker?retryWrites=true&w=majority
+JWT_SECRET=your-super-secret-jwt-key-change-this-in-production
+NODE_ENV=development
+
+and fronted working on 'http://localhost:5001/api',
+
+I want deploy this fronted and backend application in to k8s using ci cd the flow like using jankins ,docker, kubuenetish , and GitHub and ec2 instances  dont use ecr eks use docker k8s 
+
+give me the full of process one by one steps and give me the all commend to create this project end to end fully automatic
+Read 10 web pages
+Complete End-to-End CI/CD Pipeline for MERN Stack on Kubernetes
+
+This guide will walk you through deploying your MERN application on a self-managed Kubernetes cluster using Jenkins, Docker, and GitHub, all on EC2 instances without using ECR or EKS.
+
+Architecture Overview
+
+text
+GitHub → Jenkins (CI) → Docker Build → Push to Docker Hub → Kubernetes (CD) → Application Access
+Prerequisites
+
+AWS account with EC2 access
+GitHub account with your MERN code
+Docker Hub account (free tier works)
+Domain name (optional, for production)
+Step 1: Set Up EC2 Instances
+
+You'll need three EC2 instances running Ubuntu 22.04 or 20.04:
+
+Instance	Type	Purpose	Ports to Open
+Jenkins Server	t2.medium (minimum)	CI/CD automation	8080 (Jenkins), 22 (SSH)
+Kubernetes Master	t2.large	Control plane + workloads	6443, 80, 443, 22
+Kubernetes Worker	t2.medium	Application pods	All ports from master
+Launch Instructions:
+
+Go to EC2 Dashboard → Launch Instance
+Choose Ubuntu 22.04 LTS (HVM)
+Select instance type as specified above
+Configure security groups with the ports listed
+Create/use a key pair for SSH access
+Launch instances
+Step 2: Install Docker on All Instances
+
+Run these commands on all three EC2 instances:
+
+bash
+# Update system
+sudo apt update && sudo apt upgrade -y
+
+# Install Docker
+sudo apt install docker.io -y
+
+# Start and enable Docker
+sudo systemctl start docker
+sudo systemctl enable docker
+
+# Add current user to docker group
+sudo usermod -aG docker $USER
+
+# Apply group changes
+newgrp docker
+
+# Verify installation
+docker --version
+Step 3: Set Up Kubernetes Cluster Using Kubeadm
+
+On Kubernetes Master Node:
+
+bash
+# Install kubeadm, kubelet, kubectl
+sudo apt-get update
+sudo apt-get install -y apt-transport-https ca-certificates curl
+
+# Add Kubernetes signing key
+sudo curl -fsSL https://pkgs.k8s.io/core:/stable:/v1.31/deb/Release.key | sudo gpg --dearmor -o /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+
+# Add Kubernetes repository
+echo 'deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v1.31/deb/ /' | sudo tee /etc/apt/sources.list.d/kubernetes.list
+
+# Install kubeadm, kubelet, kubectl
+sudo apt-get update
+sudo apt-get install -y kubelet kubeadm kubectl
+sudo apt-mark hold kubelet kubeadm kubectl
+
+# Initialize the cluster
+sudo kubeadm init --pod-network-cidr=10.244.0.0/16
+
+# Set up kubeconfig for regular user
+mkdir -p $HOME/.kube
+sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
+sudo chown $(id -u):$(id -g) $HOME/.kube/config
+
+# Install Flannel pod network
+kubectl apply -f https://github.com/flannel-io/flannel/releases/latest/download/kube-flannel.yml
+
+# Remove master taint to run workloads on master node (for single-node setup)
+kubectl taint nodes --all node-role.kubernetes.io/control-plane-
+kubectl taint nodes --all node-role.kubernetes.io/master-
+
+# Generate join command for worker node
+kubeadm token create --print-join-command
+
+On Kubernetes Worker Node:
+
+bash
+# Install kubeadm, kubelet, kubectl (same commands as master)
+# Then join the cluster using the command from master
+sudo kubeadm join <master-ip>:6443 --token <token> --discovery-token-ca-cert-hash sha256:<hash>
+Verify Cluster on Master:
+
+bash
+kubectl get nodes
+# Should show both master and worker nodes as Ready
+Step 4: Set Up Jenkins Server
+
+Install Jenkins:
+
+bash
+# Install Java (required for Jenkins)
+sudo apt update
+sudo apt install fontconfig openjdk-17-jre -y
+
+# Add Jenkins repository
+sudo wget -O /usr/share/keyrings/jenkins-keyring.asc \
+  https://pkg.jenkins.io/debian-stable/jenkins.io-2023.key
+
+echo "deb [signed-by=/usr/share/keyrings/jenkins-keyring.asc]" \
+  https://pkg.jenkins.io/debian-stable binary/ | sudo tee \
+  /etc/apt/sources.list.d/jenkins.list > /dev/null
+
+# Install Jenkins
+sudo apt-get update
+sudo apt-get install jenkins -y
+
+# Start Jenkins
+sudo systemctl start jenkins
+sudo systemctl enable jenkins
+
+# Get initial password
+sudo cat /var/lib/jenkins/secrets/initialAdminPassword
+Access Jenkins at http://<jenkins-server-public-ip>:8080
+
+Install Required Jenkins Plugins:
+
+Login to Jenkins
+Go to Manage Jenkins → Plugins → Available plugins
+Install these plugins:
+
+Docker Pipeline
+Docker Commons
+Docker API
+GitHub Integration
+Pipeline: Stage View
+Kubernetes CLI (kubectl)
+SSH Agent
+Restart Jenkins after installation
+Configure Jenkins Tools:
+
+Go to Manage Jenkins → Tools:
+
+JDK Installations:
+
+Name: jdk17
+Install automatically
+Docker Installations:
+
+Name: docker
+Install automatically
+Step 5: Configure Jenkins for Kubernetes Access
+
+On Jenkins Server:
+
+bash
+# Install kubectl
+sudo apt-get update
+sudo apt-get install -y kubectl
+
+# Copy kubeconfig from Kubernetes master to Jenkins
+# First, on Kubernetes master:
+cat ~/.kube/config
+
+# Copy the entire output, then on Jenkins server:
+sudo mkdir -p /var/lib/jenkins/.kube
+sudo nano /var/lib/jenkins/.kube/config
+# Paste the kubeconfig content
+
+# Set proper permissions
+sudo chown -R jenkins:jenkins /var/lib/jenkins/.kube
+sudo chmod 600 /var/lib/jenkins/.kube/config
+Configure Docker Hub Credentials in Jenkins:
+
+Go to Manage Jenkins → Credentials → System → Global credentials → Add Credentials
+Kind: Username with password
+Username: your-dockerhub-username
+Password: your-dockerhub-password
+ID: docker-hub-credentials
+Configure GitHub Credentials in Jenkins:
+
+Add Credentials → Kind: Username with password
+Username: your-github-username
+Password: your-github-personal-access-token
+ID: github-credentials
+Step 6: Create Dockerfiles for Your Application
+
+Backend Dockerfile (/backend/Dockerfile):
+
+dockerfile
+FROM node:18-alpine
+
+WORKDIR /app
+
+COPY package*.json ./
+RUN npm ci --only=production
+
+COPY . .
+
+EXPOSE 5001
+
+CMD ["node", "server.js"]
+Frontend Dockerfile (/frontend/Dockerfile):
+
+dockerfile
+FROM node:18-alpine as build
+
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci
+
+COPY . .
+RUN npm run build
+
+FROM nginx:alpine
+COPY --from=build /app/build /usr/share/nginx/html
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+
+EXPOSE 80
+
+CMD ["nginx", "-g", "daemon off;"]
+Frontend nginx.conf (/frontend/nginx.conf):
+
+nginx
+server {
+    listen 80;
+    server_name _;
+    
+    location / {
+        root /usr/share/nginx/html;
+        index index.html index.htm;
+        try_files $uri $uri/ /index.html;
+    }
+    
+    location /api {
+        proxy_pass http://backend-service:5001;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_cache_bypass $http_upgrade;
+    }
+}
+Step 7: Create Kubernetes Deployment Manifests
+
+Backend Deployment (k8s/backend-deployment.yaml):
+
+yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend-deployment
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: backend
+  template:
+    metadata:
+      labels:
+        app: backend
+    spec:
+      containers:
+      - name: backend
+        image: ${DOCKER_USERNAME}/mern-backend:latest
+        ports:
+        - containerPort: 5001
+        env:
+        - name: PORT
+          value: "5001"
+        - name: MONGODB_URI
+          valueFrom:
+            secretKeyRef:
+              name: mongo-secret
+              key: mongodb-uri
+        - name: JWT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: mongo-secret
+              key: jwt-secret
+        - name: NODE_ENV
+          value: "production"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend-service
+spec:
+  selector:
+    app: backend
+  ports:
+  - port: 5001
+    targetPort: 5001
+  type: ClusterIP
+Frontend Deployment (k8s/frontend-deployment.yaml):
+
+yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend-deployment
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: frontend
+  template:
+    metadata:
+      labels:
+        app: frontend
+    spec:
+      containers:
+      - name: frontend
+        image: ${DOCKER_USERNAME}/mern-frontend:latest
+        ports:
+        - containerPort: 80
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend-service
+spec:
+  selector:
+    app: frontend
+  ports:
+  - port: 80
+    targetPort: 80
+  type: ClusterIP
+Ingress Controller (k8s/ingress.yaml):
+
+yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: mern-ingress
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /
+spec:
+  ingressClassName: nginx
+  rules:
+  - host: your-domain.com  # Replace with your domain or leave empty for IP access
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: frontend-service
+            port:
+              number: 80
+      - path: /api
+        pathType: Prefix
+        backend:
+          service:
+            name: backend-service
+            port:
+              number: 5001
+Kubernetes Secret (k8s/secret.yaml):
+
+yaml
+apiVersion: v1
+kind: Secret
+metadata:
+  name: mongo-secret
+type: Opaque
+stringData:
+  mongodb-uri: "mongodb+srv://chinmayakumarmallick25_db_user:vphFFVCHD1mdX5z5@cluster0.pjtae8z.mongodb.net/issue-tracker?retryWrites=true&w=majority"
+  jwt-secret: "your-super-secret-jwt-key-change-this-in-production"
+Apply Ingress Controller on Kubernetes Master:
+
+bash
+# Install NGINX Ingress Controller
+kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.8.0/deploy/static/provider/baremetal/deploy.yaml
+
+# Wait for ingress controller to be ready
+kubectl wait --namespace ingress-nginx --for=condition=ready pod --selector=app.kubernetes.io/component=controller --timeout=120s
+
+Step 8: Create Jenkins Pipeline
+
+Create a file named Jenkinsfile in your GitHub repository root:
+
+groovy
+pipeline {
+    agent any
+
+    environment {
+        DOCKER_USERNAME = 'your-dockerhub-username'
+        DOCKER_CREDENTIALS_ID = 'docker-hub-credentials'
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                git branch: 'main',
+                    credentialsId: 'github-credentials',
+                    url: 'https://github.com/your-username/your-repo.git'
+            }
+        }
+
+        stage('Build Backend Image') {
+            steps {
+                script {
+                    docker.build("${DOCKER_USERNAME}/mern-backend:latest", "./backend")
+                }
+            }
+        }
+
+        stage('Build Frontend Image') {
+            steps {
+                script {
+                    docker.build("${DOCKER_USERNAME}/mern-frontend:latest", "./frontend")
+                }
+            }
+        }
+
+        stage('Push Backend to Docker Hub') {
+            steps {
+                script {
+                    docker.withRegistry('', DOCKER_CREDENTIALS_ID) {
+                        docker.image("${DOCKER_USERNAME}/mern-backend:latest").push()
+                    }
+                }
+            }
+        }
+
+        stage('Push Frontend to Docker Hub') {
+            steps {
+                script {
+                    docker.withRegistry('', DOCKER_CREDENTIALS_ID) {
+                        docker.image("${DOCKER_USERNAME}/mern-frontend:latest").push()
+                    }
+                }
+            }
+        }
+
+        stage('Deploy to Kubernetes') {
+            steps {
+                script {
+                    sh """
+                        # Replace Docker username in deployment files
+                        sed -i 's/\${DOCKER_USERNAME}/${DOCKER_USERNAME}/g' k8s/*.yaml
+                        
+                        # Apply Kubernetes configurations
+                        kubectl apply -f k8s/secret.yaml
+                        kubectl apply -f k8s/backend-deployment.yaml
+                        kubectl apply -f k8s/frontend-deployment.yaml
+                        kubectl apply -f k8s/ingress.yaml
+                        
+                        # Wait for deployments to be ready
+                        kubectl rollout status deployment/backend-deployment
+                        kubectl rollout status deployment/frontend-deployment
+                    """
+                }
+            }
+        }
+    }
+
+    post {
+        success {
+            echo 'Deployment successful! Application is now running on Kubernetes.'
+        }
+        failure {
+            echo 'Deployment failed. Please check the logs.'
+        }
+    }
+}
+Step 9: Configure GitHub Webhook
+
+Go to your GitHub repository → Settings → Webhooks → Add webhook
+Payload URL: http://<jenkins-server-public-ip>:8080/github-webhook/
+Content type: application/json
+Events: Just the push event
+Click Add webhook
+Step 10: Create Jenkins Pipeline Job
+
+In Jenkins, click New Item
+Enter name: mern-stack-pipeline
+Select Pipeline and click OK
+Under Build Triggers, select GitHub hook trigger for GITScm polling
+Under Pipeline, select Pipeline script from SCM
+SCM: Git
+Repository URL: https://github.com/your-username/your-repo.git
+Credentials: Select your GitHub credentials
+Branches to build: main
+Script Path: Jenkinsfile
+Click Save
+Step 11: Set Up MongoDB Secret
+
+Since you're using MongoDB Atlas (cloud), you only need to create the secret in Kubernetes:
+
+bash
+# On Kubernetes master node
+kubectl create secret generic mongo-secret \
+  --from-literal=mongodb-uri='mongodb+srv://chinmayakumarmallick25_db_user:vphFFVCHD1mdX5z5@cluster0.pjtae8z.mongodb.net/issue-tracker?retryWrites=true&w=majority' \
+  --from-literal=jwt-secret='your-super-secret-jwt-key-change-this-in-production'
+Step 12: Test the Pipeline
+
+Make a code change and push to GitHub
+Watch Jenkins automatically trigger the pipeline
+Monitor progress in Jenkins console output
+Step 13: Access Your Application
+
+
+
+your-mern-project/
+│
+├── backend/
+│   ├── Dockerfile
+│   ├── package.json
+│   ├── server.js
+│   └── ... (other backend files)
+│
+├── frontend/
+│   ├── Dockerfile
+│   ├── nginx.conf
+│   ├── package.json
+│   └── ... (other frontend files)
+│
+├── k8s/                          ← CREATE THIS FOLDER
+│   ├── backend-deployment.yaml
+│   ├── frontend-deployment.yaml
+│   ├── ingress.yaml              ← PUT INGRESS FILE HERE
+│   └── secret.yaml               ← PUT SECRET FILE HERE
+│
+└── Jenkinsfile                   ← AT PROJECT ROOT
+
+
+# On Jenkins server, run as jenkins user
+sudo -u jenkins kubectl get nodes
+
+# If not configured, copy kubeconfig from master
+# On Kubernetes master:
+cat ~/.kube/config
+
+# On Jenkins server (as root):
+sudo mkdir -p /var/lib/jenkins/.kube
+sudo nano /var/lib/jenkins/.kube/config
+# Paste the config content
+sudo chown -R jenkins:jenkins /var/lib/jenkins/.kube
+sudo chmod 600 /var/lib/jenkins/.kube/config
+
+# Test as jenkins user
+sudo -u jenkins kubectl get nodes
+
+
+
+
+Started by GitHub push by Chinmaya1999
+Obtained Jenkinsfile from git https://github.com/Chinmaya1999/CMdevops.git
+[Pipeline] Start of Pipeline
+[Pipeline] node
+Running on Jenkins in /var/lib/jenkins/workspace/mern-stack-pipeline
+[Pipeline] {
+[Pipeline] stage
+[Pipeline] { (Declarative: Checkout SCM)
+[Pipeline] checkout
+The recommended git tool is: git
+using credential github
+ > git rev-parse --resolve-git-dir /var/lib/jenkins/workspace/mern-stack-pipeline/.git # timeout=10
+Fetching changes from the remote Git repository
+ > git config remote.origin.url https://github.com/Chinmaya1999/CMdevops.git # timeout=10
+Fetching upstream changes from https://github.com/Chinmaya1999/CMdevops.git
+ > git --version # timeout=10
+ > git --version # 'git version 2.50.1'
+using GIT_ASKPASS to set credentials github
+ > git fetch --tags --force --progress -- https://github.com/Chinmaya1999/CMdevops.git +refs/heads/*:refs/remotes/origin/* # timeout=10
+ > git rev-parse refs/remotes/origin/main^{commit} # timeout=10
+Checking out Revision 4347517702b1171dcd9fe2df03b5f4a03e03ae25 (refs/remotes/origin/main)
+ > git config core.sparsecheckout # timeout=10
+ > git checkout -f 4347517702b1171dcd9fe2df03b5f4a03e03ae25 # timeout=10
+Commit message: "Update Jenkinsfile"
+ > git rev-list --no-walk 1f89c5b643b6a083d151957e2d8d2a4c302fdb3f # timeout=10
+[Pipeline] }
+[Pipeline] // stage
+[Pipeline] withEnv
+[Pipeline] {
+[Pipeline] withEnv
+[Pipeline] {
+[Pipeline] stage
+[Pipeline] { (Checkout)
+[Pipeline] git
+The recommended git tool is: git
+using credential github
+ > git rev-parse --resolve-git-dir /var/lib/jenkins/workspace/mern-stack-pipeline/.git # timeout=10
+Fetching changes from the remote Git repository
+ > git config remote.origin.url https://github.com/Chinmaya1999/CMdevops.git # timeout=10
+Fetching upstream changes from https://github.com/Chinmaya1999/CMdevops.git
+ > git --version # timeout=10
+ > git --version # 'git version 2.50.1'
+using GIT_ASKPASS to set credentials github
+ > git fetch --tags --force --progress -- https://github.com/Chinmaya1999/CMdevops.git +refs/heads/*:refs/remotes/origin/* # timeout=10
+ > git rev-parse refs/remotes/origin/main^{commit} # timeout=10
+Checking out Revision 4347517702b1171dcd9fe2df03b5f4a03e03ae25 (refs/remotes/origin/main)
+ > git config core.sparsecheckout # timeout=10
+ > git checkout -f 4347517702b1171dcd9fe2df03b5f4a03e03ae25 # timeout=10
+ > git branch -a -v --no-abbrev # timeout=10
+ > git checkout -b main 4347517702b1171dcd9fe2df03b5f4a03e03ae25 # timeout=10
+Commit message: "Update Jenkinsfile"
+[Pipeline] }
+[Pipeline] // stage
+[Pipeline] stage
+[Pipeline] { (Build Backend Image)
+[Pipeline] script
+[Pipeline] {
+[Pipeline] isUnix
+[Pipeline] withEnv
+[Pipeline] {
+[Pipeline] sh
++ docker build -t awsmallick1999/mern-backend:latest ./backend
+ERROR: permission denied while trying to connect to the Docker daemon socket at unix:///var/run/docker.sock: Get "http://%2Fvar%2Frun%2Fdocker.sock/_ping": dial unix /var/run/docker.sock: connect: permission denied
+[Pipeline] }
+[Pipeline] // withEnv
+[Pipeline] }
+[Pipeline] // script
+[Pipeline] }
+[Pipeline] // stage
+[Pipeline] stage
+[Pipeline] { (Build Frontend Image)
+Stage "Build Frontend Image" skipped due to earlier failure(s)
+[Pipeline] getContext
+[Pipeline] }
+[Pipeline] // stage
+[Pipeline] stage
+[Pipeline] { (Push Backend to Docker Hub)
+Stage "Push Backend to Docker Hub" skipped due to earlier failure(s)
+[Pipeline] getContext
+[Pipeline] }
+[Pipeline] // stage
+[Pipeline] stage
+[Pipeline] { (Push Frontend to Docker Hub)
+Stage "Push Frontend to Docker Hub" skipped due to earlier failure(s)
+[Pipeline] getContext
+[Pipeline] }
+[Pipeline] // stage
+[Pipeline] stage
+[Pipeline] { (Deploy to Kubernetes)
+Stage "Deploy to Kubernetes" skipped due to earlier failure(s)
+[Pipeline] getContext
+[Pipeline] }
+[Pipeline] // stage
+[Pipeline] stage
+[Pipeline] { (Declarative: Post Actions)
+[Pipeline] echo
+Deployment failed. Please check the logs.
+[Pipeline] }
+[Pipeline] // stage
+[Pipeline] }
+[Pipeline] // withEnv
+[Pipeline] }
+[Pipeline] // withEnv
+[Pipeline] }
+[Pipeline] // node
+[Pipeline] End of Pipeline
+ERROR: script returned exit code 1
+Finished: FAILURE
+
+then do this 
+
+# Add jenkins user to docker group
+sudo usermod -aG docker jenkins
+
+# Verify docker group exists
+getent group docker
+
+# Check jenkins user groups before restart
+groups jenkins
+
+# Restart Jenkins service to apply group changes
+sudo systemctl restart jenkins
+
+# Verify docker socket permissions
+ls -la /var/run/docker.sock
+# Should show: srw-rw---- 1 root docker
+
+# Wait for Jenkins to fully restart (about 30 seconds)
+sleep 30
+
+# Test docker command as jenkins user
+sudo -u jenkins docker --version
+sudo -u jenkins docker ps
